@@ -2,7 +2,7 @@
 
 A professional enterprise dashboard application for managing and monitoring UiPath Orchestrator processes. This application provides a comprehensive view of all available automation processes with their key details and statuses, built with React and the UiPath TypeScript SDK.
 
-[cloudflarebutton]
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/swati354/uipath-oauth-1)
 
 ## Features
 
@@ -139,7 +139,7 @@ The application follows a clean architecture pattern:
 
 This application is optimized for deployment on Cloudflare Pages:
 
-[cloudflarebutton]
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/swati354/uipath-oauth-1)
 
 #### Manual Deployment
 
