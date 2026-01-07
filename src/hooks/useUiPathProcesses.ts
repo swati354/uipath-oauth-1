@@ -6,12 +6,10 @@
  * - Start a process
  * - Get process by ID
  */
-
 import { useQuery, useMutation, useQueryClient, UseQueryResult, UseMutationResult } from '@tanstack/react-query';
 import { getUiPath } from '../lib/uipath';
 import { toast } from 'sonner';
 import type { ProcessGetResponse, ProcessStartResponse } from 'uipath-sdk';
-
 /**
  * Fetch all UiPath processes
  *
@@ -24,12 +22,10 @@ export function useUiPathProcesses(folderId?: number, enabled = true): UseQueryR
 		queryFn: async (): Promise<ProcessGetResponse[]> => {
 			const uipath = getUiPath();
 			const isAuthenticated = uipath.isAuthenticated();
-			
 			// Return empty array if not authenticated - don't throw error
 			if (!isAuthenticated) {
 				return [];
 			}
-			
 			const result = await uipath.processes.getAll(
 				folderId ? { folderId } : undefined
 			);
@@ -43,7 +39,6 @@ export function useUiPathProcesses(folderId?: number, enabled = true): UseQueryR
 		refetchInterval: 30000,
 	});
 }
-
 /**
  * Get a specific process by ID
  *
@@ -62,7 +57,6 @@ export function useUiPathProcess(processId: number | undefined, folderId: number
 		refetchInterval: 30000,
 	});
 }
-
 /**
  * Mutation to start a UiPath process
  *
@@ -71,7 +65,6 @@ export function useUiPathProcess(processId: number | undefined, folderId: number
  */
 export function useStartProcess(): UseMutationResult<ProcessStartResponse[], Error, { processKey: string; folderId: number }> {
 	const queryClient = useQueryClient();
-
 	return useMutation({
 		mutationFn: async ({
 			processKey,
@@ -84,7 +77,11 @@ export function useStartProcess(): UseMutationResult<ProcessStartResponse[], Err
 			if (!uipath.isAuthenticated()) {
 				throw new Error('UiPath SDK not authenticated. Please authenticate first.');
 			}
-			return await uipath.processes.start({ processKey }, folderId);
+			return await uipath.processes.start({
+				processKey,
+				strategy: 'All',
+				folderId
+			});
 		},
 		onSuccess: () => {
 			toast.success('Process started successfully');
