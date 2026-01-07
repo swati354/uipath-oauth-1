@@ -1,148 +1,158 @@
-// Home page of the app, Currently a demo page for demonstration.
-// Please rewrite this file to implement your own logic. Do not replace or delete it, simply rewrite this HomePage.tsx file.
-import { useEffect } from 'react'
-import { Sparkles } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { ThemeToggle } from '@/components/ThemeToggle'
-import { Toaster, toast } from '@/components/ui/sonner'
-import { create } from 'zustand'
-import { useShallow } from 'zustand/react/shallow'
-import { AppLayout } from '@/components/layout/AppLayout'
-
-// Timer store: independent slice with a clear, minimal API, for demonstration
-type TimerState = {
-  isRunning: boolean;
-  elapsedMs: number;
-  start: () => void;
-  pause: () => void;
-  reset: () => void;
-  tick: (deltaMs: number) => void;
-}
-
-const useTimerStore = create<TimerState>((set) => ({
-  isRunning: false,
-  elapsedMs: 0,
-  start: () => set({ isRunning: true }),
-  pause: () => set({ isRunning: false }),
-  reset: () => set({ elapsedMs: 0, isRunning: false }),
-  tick: (deltaMs) => set((s) => ({ elapsedMs: s.elapsedMs + deltaMs })),
-}))
-
-// Counter store: separate slice to showcase multiple stores without coupling
-type CounterState = {
-  count: number;
-  inc: () => void;
-  reset: () => void;
-}
-
-const useCounterStore = create<CounterState>((set) => ({
-  count: 0,
-  inc: () => set((s) => ({ count: s.count + 1 })),
-  reset: () => set({ count: 0 }),
-}))
-
-function formatDuration(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000))
-  const m = Math.floor(total / 60)
-  const s = total % 60
-  return `${m}:${s.toString().padStart(2, '0')}`
-}
-
+import React, { useState, useEffect, useMemo } from 'react';
+import { Search, RefreshCw, Activity, AlertCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { ProcessTable } from '@/components/ProcessTable';
+import { ProcessFilters } from '@/components/ProcessFilters';
+import { useUiPathProcesses, useStartProcess } from '@/hooks/useUiPathProcesses';
+import { initializeUiPathSDK } from '@/lib/uipath';
+import type { ProcessGetResponse } from 'uipath-sdk';
 export function HomePage() {
-  // Select only what is needed to avoid unnecessary re-renders
-  const { isRunning, elapsedMs } = useTimerStore(
-    useShallow((s) => ({ isRunning: s.isRunning, elapsedMs: s.elapsedMs })),
-  )
-  const start = useTimerStore((s) => s.start)
-  const pause = useTimerStore((s) => s.pause)
-  const resetTimer = useTimerStore((s) => s.reset)
-  const count = useCounterStore((s) => s.count)
-  const inc = useCounterStore((s) => s.inc)
-  const resetCount = useCounterStore((s) => s.reset)
-
-  // Drive the timer only while running; avoid update-depth issues with a scoped RAF
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedFolderId, setSelectedFolderId] = useState<number | undefined>();
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [initError, setInitError] = useState<string | null>(null);
+  // Initialize UiPath SDK on component mount
   useEffect(() => {
-    if (!isRunning) return
-    let raf = 0
-    let last = performance.now()
-    const loop = () => {
-      const now = performance.now()
-      const delta = now - last
-      last = now
-      // Read store API directly to keep effect deps minimal and stable
-      useTimerStore.getState().tick(delta)
-      raf = requestAnimationFrame(loop)
-    }
-    raf = requestAnimationFrame(loop)
-    return () => cancelAnimationFrame(raf)
-  }, [isRunning])
-
-  const onPleaseWait = () => {
-    inc()
-    if (!isRunning) {
-      start()
-      toast.success('Building your app…', {
-        description: 'Hang tight, we\'re setting everything up.',
-      })
-    } else {
-      pause()
-      toast.info('Taking a short pause', {
-        description: 'We\'ll continue shortly.',
-      })
-    }
-  }
-
-  const formatted = formatDuration(elapsedMs)
-
-  return (
-    <AppLayout>
-      <div className="min-h-screen flex flex-col items-center justify-center bg-background text-foreground p-4 overflow-hidden relative">
-        <ThemeToggle />
-        <div className="absolute inset-0 bg-gradient-rainbow opacity-10 dark:opacity-20 pointer-events-none" />
-        <div className="text-center space-y-8 relative z-10 animate-fade-in">
-          <div className="flex justify-center">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-primary flex items-center justify-center shadow-primary floating">
-              <Sparkles className="w-8 h-8 text-white rotating" />
+    const initSDK = async () => {
+      try {
+        console.log('🚀 HomePage: Initializing UiPath SDK...');
+        await initializeUiPathSDK();
+        console.log('✅ HomePage: SDK initialized successfully');
+        setInitError(null);
+      } catch (error) {
+        console.error('❌ HomePage: SDK initialization failed:', error);
+        setInitError(error instanceof Error ? error.message : 'Failed to initialize UiPath SDK');
+      } finally {
+        setIsInitializing(false);
+      }
+    };
+    initSDK();
+  }, []);
+  // Fetch processes data
+  const { 
+    data: processes, 
+    isLoading: processesLoading, 
+    error: processesError, 
+    refetch 
+  } = useUiPathProcesses(selectedFolderId, !isInitializing && !initError);
+  const { mutate: startProcess, isPending: isStartingProcess } = useStartProcess();
+  // Filter processes based on search term
+  const filteredProcesses = useMemo(() => {
+    if (!processes) return [];
+    const processArray = Array.isArray(processes) ? processes : processes?.value || [];
+    if (!searchTerm.trim()) return processArray;
+    const searchLower = searchTerm.toLowerCase();
+    return processArray.filter((process: ProcessGetResponse) =>
+      process.name?.toLowerCase().includes(searchLower) ||
+      process.key?.toLowerCase().includes(searchLower) ||
+      process.description?.toLowerCase().includes(searchLower)
+    );
+  }, [processes, searchTerm]);
+  const handleStartProcess = (processKey: string, folderId: number) => {
+    startProcess({ 
+      processKey, 
+      folderId: folderId || selectedFolderId || 1
+    });
+  };
+  const handleRefresh = () => {
+    refetch();
+  };
+  // Show initialization loading state
+  if (isInitializing) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="py-8 md:py-10 lg:py-12">
+          <div className="flex items-center justify-center min-h-[400px]">
+            <div className="text-center space-y-4">
+              <RefreshCw className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
+              <p className="text-lg text-muted-foreground">Initializing UiPath connection...</p>
             </div>
-          </div>
-          <h1 className="text-5xl md:text-7xl font-display font-bold text-balance leading-tight">
-            Creating your <span className="text-gradient">app</span>
-          </h1>
-          <p className="text-lg md:text-xl text-muted-foreground max-w-xl mx-auto text-pretty">
-            Your application would be ready soon.
-          </p>
-          <div className="flex justify-center gap-4">
-            <Button 
-              size="lg"
-              onClick={onPleaseWait}
-              className="btn-gradient px-8 py-4 text-lg font-semibold hover:-translate-y-0.5 transition-all duration-200"
-              aria-live="polite"
-            >
-              Please Wait
-            </Button>
-          </div>
-          <div className="flex items-center justify-center gap-6 text-sm text-muted-foreground">
-            <div>
-              Time elapsed: <span className="font-medium tabular-nums text-foreground">{formatted}</span>
-            </div>
-            <div>
-              Coins: <span className="font-medium tabular-nums text-foreground">{count}</span>
-            </div>
-          </div>
-          <div className="flex justify-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => { resetTimer(); resetCount(); toast('Reset complete') }}>
-              Reset
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => { inc(); toast('Coin added') }}>
-              Add Coin
-            </Button>
           </div>
         </div>
-        <footer className="absolute bottom-8 text-center text-muted-foreground/80">
-          <p>Powered by Cloudflare</p>
-        </footer>
-        <Toaster richColors closeButton />
       </div>
-    </AppLayout>
-  )
+    );
+  }
+  // Show initialization error
+  if (initError) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="py-8 md:py-10 lg:py-12">
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              Failed to connect to UiPath: {initError}
+            </AlertDescription>
+          </Alert>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="py-8 md:py-10 lg:py-12">
+        {/* Header */}
+        <div className="mb-8">
+          <div className="flex items-center gap-3 mb-2">
+            <Activity className="h-8 w-8 text-blue-600" />
+            <h1 className="text-3xl font-bold text-foreground">UiPath Process Manager</h1>
+          </div>
+          <p className="text-muted-foreground">
+            Monitor and manage your UiPath Orchestrator processes
+          </p>
+        </div>
+        {/* Filters */}
+        <div className="mb-6">
+          <ProcessFilters
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
+            selectedFolderId={selectedFolderId}
+            onFolderChange={setSelectedFolderId}
+          />
+        </div>
+        {/* Action Bar */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">
+              {filteredProcesses.length} process{filteredProcesses.length !== 1 ? 'es' : ''}
+              {searchTerm && ` matching "${searchTerm}"`}
+            </span>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={processesLoading}
+            className="gap-2"
+          >
+            <RefreshCw className={`h-4 w-4 ${processesLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </div>
+        {/* Error Alert */}
+        {processesError && (
+          <Alert variant="destructive" className="mb-6">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              Failed to load processes: {(processesError as Error).message}
+            </AlertDescription>
+          </Alert>
+        )}
+        {/* Process Table */}
+        <ProcessTable
+          processes={filteredProcesses}
+          isLoading={processesLoading}
+          onStartProcess={handleStartProcess}
+          isStartingProcess={isStartingProcess}
+        />
+        {/* Footer */}
+        <div className="mt-12 pt-8 border-t border-border">
+          <p className="text-center text-sm text-muted-foreground">
+            © Powered by UiPath
+          </p>
+        </div>
+      </div>
+    </div>
+  );
 }
